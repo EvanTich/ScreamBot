@@ -1,0 +1,19 @@
+{
+  "name": "scream_bot",
+  "version": "1.0.0",
+  "description": "Screams.",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Evan Tichenor",
+  "license": "ISC",
+  "dependencies": {
+    "@discordjs/opus": "^0.1.0",
+    "discord.js": "^12.2.0",
+    "ffmpeg-static": "^4.1.1",
+    "fluent-ffmpeg": "^2.1.2",
+    "ytdl-core": "^2.1.0"
+  }
+}

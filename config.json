@@ -1,0 +1,5 @@
+{
+    "prefix": "scrot",
+    "max_time": 10000,
+    "min_time": 6000
+}
