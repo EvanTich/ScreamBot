@@ -4,7 +4,6 @@
  * Code came from Scream Bot.
  */
 
-
 const Discord = require('discord.js');
 const fs = require('fs');
 
@@ -13,25 +12,25 @@ const ffmpeg = require('fluent-ffmpeg');
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const { token } = require('./token.json');
-// config contains prefix, max_time, min_time
 const config = require('./config.json');
 
 const client = new Discord.Client();
 
-// per server settings
 /**
  * settings = {
- *  "id": {
+ *  "guild.id": {
  *   "toggled": boolean,        // toggled on by default
  *   "channel": VoiceChannel,   // voice channel, null means its not on a channel
- *   "members": string[]        // string array of user id's currently in the channel
+ *   "members": string[],        // string array of user id's currently in the channel
+ *   "min_time": number,
+ *   "max_time": number
  *  }
  * }
  */
 let settings = {}; 
-// end of per server settings
 
 
+// fix for discord.js problems from https://github.com/discordjs/discord.js/issues/2929
 const { Readable } = require('stream');
 
 const SILENCE_FRAME = Buffer.from([0xF8, 0xFF, 0xFE]);
@@ -41,10 +40,11 @@ class Silence extends Readable {
     this.push(SILENCE_FRAME);
   }
 }
+// end of fix
 
 
-function getRandomTime() {
-    return Math.random() * (config.max_time - config.min_time) + config.min_time;
+function getRandomTime(guildId) {
+    return Math.random() * (settings[guildId].max_time - settings[guildId].min_time) + settings[guildId].min_time;
 }
 
 function leave(guildId) {
@@ -53,14 +53,7 @@ function leave(guildId) {
 }
 
 function createOutputFile(user) {
-    // use IDs instead of username cause some people have stupid emojis in their name
-    const fileName = `./recordings/${user.id}.pcm`;
-    let stream = fs.createWriteStream(fileName);
-
-    // write the header of a wav file
-    //stream.write(audioHeader);
-
-    return stream;
+    return fs.createWriteStream(`./recordings/${user.id}.pcm`);
 }
 
 function scream(conn, guildId, id, recursive = false) {
@@ -71,28 +64,12 @@ function scream(conn, guildId, id, recursive = false) {
 
         if(recursive && channel && channel.id == id)
             scream(conn, guildId, id, recursive);
-    }, getRandomTime());
-}
-
-function dbLevel(file) {
-
-}
-
-/**
- * 
- * @param {string} id user id to try to replace
- * @param {string} guildId key is the user id, number is files max db level
- */
-function replaceMaxAudioFile(id, guildId) {
-    // replace max/id.wav with id.wav if id.wav has more volume than max/id.wav
-
-    // max/id.wav volume is in wavs dictionary
-    
+    }, getRandomTime(guildId));
 }
 
 function join(msg, mem) {
-    if(settings[msg.guild.id].toggled && mem.voice.channel) {
-        let obj = settings[mem.guild.id];
+    let obj = settings[mem.guild.id];
+    if(obj.toggled && mem.voice.channel) {
         if(obj.channel && obj.channel.id == mem.voice.channel.id) {
             msg.channel.send('I\'m already connected!');
             return;
@@ -105,25 +82,20 @@ function join(msg, mem) {
             // (User, Speaking) => {}
             conn.on('speaking', (u, speaking) => {
                 if(speaking.bitfield != 0) {
-                    console.log('listening...')
-
                     const audio = conn.receiver.createStream(u, { mode: 'pcm' });
                     const outputStream = createOutputFile(u);
 
                     audio.pipe(outputStream);
 
                     audio.on('end', () => {
-                        console.log('stopped listening...');
                         ffmpeg(`./recordings/${u.id}.pcm`)
                             .inputOptions(['-f s16le', '-ar 48k', '-ac 2'])
                             .output(`./recordings/${u.id}.wav`)
                             .on('end', () => {
-                                console.log('formatted');
+                                //console.log('formatted');
                             }).on('error', err => {
                                 console.log(err);
                             }).run();
-
-                        replaceMaxAudioFile(u.id, null);
                     });
                 }
             });
@@ -134,11 +106,11 @@ function join(msg, mem) {
             // using debug strings to add/remove user id's to/from obj.members
             conn.on('debug', str => {
                 if(str.startsWith('[WS] << ')) {
-                    let { op, d: { user_id: userId } } = JSON.parse(str.slice(8));
+                    let { op, d } = JSON.parse(str.slice(8));
                     if(op == 13) { // op = 13 -> disconnect
-                        delete obj.members[obj.members.indexOf(userId)];
+                        delete obj.members[obj.members.indexOf(d.user_id)];
                     } else if(op == 12) { // op = 12 -> connect
-                        obj.members.push(userId);
+                        obj.members.push(d.user_id);
                     }
                 }
             });
@@ -155,9 +127,11 @@ function join(msg, mem) {
 client.on('message', msg => {
     if(!(msg.guild.id in settings)) {
         settings[msg.guild.id] = {
-            "toggled": true,
-            "channel": null,        // voice channel 
-            "members": []           // string array of user id's currently in the channel
+            "toggled": true,                        // Toggled?
+            "channel": null,                        // voice channel 
+            "members": [],                          // string array of user id's currently in the channel
+            "min_time": config.default_min_time,    // 
+            "max_time": config.default_max_time,    //
         };
     }
 
@@ -176,6 +150,20 @@ client.on('message', msg => {
             case 'join':
                 join(msg, msg.member);
                 break;
+            case 'min': {
+                let time = parseInt(args[0]) * 1000;
+                if(time >= config.minimal_time) {
+                    settings[msg.guild.id].min_time = time;
+                }
+                break;
+            }
+            case 'max': {
+                let time = parseInt(args[0]) * 1000;
+                if(time >= settings[msg.guild.id].min_time) {
+                    settings[msg.guild.id].max_time = time;
+                }
+                break;
+            }
         }
     }
 });

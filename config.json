@@ -1,5 +1,6 @@
 {
     "prefix": "scrot",
-    "max_time": 10000,
-    "min_time": 6000
+    "default_max_time": 10000,
+    "default_min_time": 6000,
+    "minimal_time": 6000
 }
