@@ -1,7 +1,7 @@
 /**
  * Repeats the last thing anybody said at random intervals.
  * Too hilarious to not keep.
- * Code came from Scream Bot.
+ * Code originally came from Scream Bot as a nice side effect of testing.
  */
 
 const Discord = require('discord.js');
@@ -20,6 +20,18 @@ const TYPE = process.argv.includes('--2');      // uses createWAV2 instead of cr
 // end of process args
 
 const client = new Discord.Client();
+
+// fix for discord.js problems from https://github.com/discordjs/discord.js/issues/2929
+const { Readable } = require('stream');
+
+const SILENCE_FRAME = Buffer.from([0xF8, 0xFF, 0xFE]);
+
+class Silence extends Readable {
+  _read() {
+    this.push(SILENCE_FRAME);
+  }
+}
+// end of fix
 
 /**
  * settings = {
@@ -51,44 +63,6 @@ function sizeBuffer(size) {
     buf.writeUInt32LE(size);
     return buf;
 }
-
-/**
- * 
- * @param {ReadableStream} stream   a stream of raw pcm data
- * @param {Function}       callback standard callback 
- */
-function saveToWAV(stream, filePath, callback = null) {
-    let data = [];
-    stream.on('data', chunk => {
-        data.push(...chunk);
-    });
-
-    stream.on('end', () => {
-        let write = fs.createWriteStream(filePath);
-        write.write(HEADERS.TOP);
-        write.write(sizeBuffer(36 + data.length));
-        write.write(HEADERS.MIDDLE);
-        write.write(sizeBuffer(data.length));
-        write.write(data);
-
-        if(callback)
-            callback(filePath);
-    });
-}
-
-
-// fix for discord.js problems from https://github.com/discordjs/discord.js/issues/2929
-const { Readable } = require('stream');
-
-const SILENCE_FRAME = Buffer.from([0xF8, 0xFF, 0xFE]);
-
-class Silence extends Readable {
-  _read() {
-    this.push(SILENCE_FRAME);
-  }
-}
-// end of fix
-
 
 function getRandomTime(guildId) {
     return Math.random() * (settings[guildId].max_time - settings[guildId].min_time) + settings[guildId].min_time;
@@ -198,6 +172,7 @@ function join(msg, mem) {
             obj.members = obj.channel.members.filter(member => !member.user.bot).map(member => member.user.id);
 
             // using debug strings to add/remove user id's to/from obj.members
+            // TODO: test further, problems may arise
             conn.on('debug', str => {
                 if(str.startsWith('[WS] << ')) {
                     let { op, d } = JSON.parse(str.slice(8));
