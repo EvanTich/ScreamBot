@@ -7,12 +7,17 @@
 const Discord = require('discord.js');
 const fs = require('fs');
 
-const ffmpegPath = require('ffmpeg-static');
-const ffmpeg = require('fluent-ffmpeg');
-ffmpeg.setFfmpegPath(ffmpegPath);
+// const ffmpegPath = require('ffmpeg-static');
+// const ffmpeg = require('fluent-ffmpeg');
+// ffmpeg.setFfmpegPath(ffmpegPath);
 
 const { token } = require('./token.json');
 const config = require('./config.json');
+
+// process args
+const DEBUG = process.argv.includes('--debug'); // prints debug logs if true
+const TYPE = process.argv.includes('--2');      // uses createWAV2 instead of createWAV if true
+// end of process args
 
 const client = new Discord.Client();
 
@@ -28,6 +33,48 @@ const client = new Discord.Client();
  * }
  */
 let settings = {}; 
+
+/**
+ * Contains main header for 
+ * @property {Buffer} TOP    bytes for 'RIFF', ChunkSize goes afterwards
+ * @property {Buffer} MIDDLE bytes for rest of WAVE format, Subchunk2Size goes afterwards
+ */
+const HEADERS = {
+    TOP: Buffer.from([0x52, 0x49, 0x46, 0x46]), // 'RIFF'
+    MIDDLE: Buffer.from([
+        0x57, 0x41, 0x56, 0x45, 0x66, 0x6D, 0x74, 0x20, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 
+        0x80, 0xBB, 0x00, 0x00, 0x00, 0xEE, 0x02, 0x00, 0x04, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61])
+};
+
+function sizeBuffer(size) {
+    let buf = Buffer.alloc(4);
+    buf.writeUInt32LE(size);
+    return buf;
+}
+
+/**
+ * 
+ * @param {ReadableStream} stream   a stream of raw pcm data
+ * @param {Function}       callback standard callback 
+ */
+function saveToWAV(stream, filePath, callback = null) {
+    let data = [];
+    stream.on('data', chunk => {
+        data.push(...chunk);
+    });
+
+    stream.on('end', () => {
+        let write = fs.createWriteStream(filePath);
+        write.write(HEADERS.TOP);
+        write.write(sizeBuffer(36 + data.length));
+        write.write(HEADERS.MIDDLE);
+        write.write(sizeBuffer(data.length));
+        write.write(data);
+
+        if(callback)
+            callback(filePath);
+    });
+}
 
 
 // fix for discord.js problems from https://github.com/discordjs/discord.js/issues/2929
@@ -52,8 +99,66 @@ function leave(guildId) {
     settings[guildId].channel = null;
 }
 
-function createOutputFile(user) {
-    return fs.createWriteStream(`./recordings/${user.id}.pcm`);
+
+/**
+ * Only writes to disk once.
+ * @param {ReadableStream} rawPCM 
+ * @param {string} userId 
+ */
+function createWAV(rawPCM, userId) {
+    let start = Date.now();
+    let data = [];
+    rawPCM.on('data', chunk => {
+        data.push(...chunk);
+    });
+
+    rawPCM.on('end', () => {
+        let write = fs.createWriteStream(`./recordings/${userId}.wav`);
+        write.write(HEADERS.TOP);
+        write.write(sizeBuffer(36 + data.length));
+        write.write(HEADERS.MIDDLE);
+        write.write(sizeBuffer(data.length));
+        write.end(Buffer.from(data));
+
+        write.on('finish', () => {
+            if(DEBUG) console.log('duration: ', Date.now() - start);
+        });
+    });
+}
+
+/**
+ * Writes to disk twice, reads once.
+ * @param {ReadableStream} rawPCM 
+ * @param {string} userId 
+ */
+function createWAV2(rawPCM, userId) {
+    let start = Date.now();
+
+    let pcmPath = `./recordings/${userId}.pcm`;
+    let origWriteStream = fs.createWriteStream(pcmPath);
+
+    rawPCM.pipe(origWriteStream);
+
+    rawPCM.on('end', () => {
+        fs.stat(pcmPath, (err, stats) => {
+            let bytes = stats.size;
+    
+            let write = fs.createWriteStream(`./recordings/${userId}.wav`);
+            write.write(HEADERS.TOP);
+            write.write(sizeBuffer(36 + bytes));
+            write.write(HEADERS.MIDDLE);
+            write.write(sizeBuffer(bytes));
+            let read = fs.createReadStream(pcmPath);
+            read.pipe(write);
+    
+            read.on('end', () => {
+                write.end();
+                write.on('finish', () => {
+                    if(DEBUG) console.log('duration: ', Date.now() - start);
+                });
+            });
+        });
+    });
 }
 
 function scream(conn, guildId, id, recursive = false) {
@@ -82,21 +187,10 @@ function join(msg, mem) {
             // (User, Speaking) => {}
             conn.on('speaking', (u, speaking) => {
                 if(speaking.bitfield != 0) {
-                    const audio = conn.receiver.createStream(u, { mode: 'pcm' });
-                    const outputStream = createOutputFile(u);
+                    const raw = conn.receiver.createStream(u, { mode: 'pcm' });
 
-                    audio.pipe(outputStream);
-
-                    audio.on('end', () => {
-                        ffmpeg(`./recordings/${u.id}.pcm`)
-                            .inputOptions(['-f s16le', '-ar 48k', '-ac 2'])
-                            .output(`./recordings/${u.id}.wav`)
-                            .on('end', () => {
-                                //console.log('formatted');
-                            }).on('error', err => {
-                                console.log(err);
-                            }).run();
-                    });
+                    if(TYPE) createWAV2(raw, u.id);
+                    else     createWAV(raw, u.id);
                 }
             });
 
