@@ -15,8 +15,9 @@ const { token } = require('./token.json');
 const config = require('./config.json');
 
 // process args
-const DEBUG = process.argv.includes('--debug'); // prints debug logs if true
-const TYPE = process.argv.includes('--2');      // uses createWAV2 instead of createWAV if true
+const DEBUG = process.argv.includes('--debug');       // prints debug logs if true
+const TYPE = process.argv.includes('--2');            // uses createWAV2 instead of createWAV if true
+const DURATION = process.argv.includes('--duration'); // prints how long it takes to convert to wav
 // end of process args
 
 const client = new Discord.Client();
@@ -47,7 +48,9 @@ class Silence extends Readable {
 let settings = {}; 
 
 /**
- * Contains main header for 
+ * Contains main header for RIFF WAVE files.
+ * PCM audio, 48k audio sampling frequency, 2 audio channels
+ * http://soundfile.sapp.org/doc/WaveFormat/ is helpful for understanding it.
  * @property {Buffer} TOP    bytes for 'RIFF', ChunkSize goes afterwards
  * @property {Buffer} MIDDLE bytes for rest of WAVE format, Subchunk2Size goes afterwards
  */
@@ -57,6 +60,10 @@ const HEADERS = {
         0x57, 0x41, 0x56, 0x45, 0x66, 0x6D, 0x74, 0x20, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 
         0x80, 0xBB, 0x00, 0x00, 0x00, 0xEE, 0x02, 0x00, 0x04, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61])
 };
+
+function log(...strs) {
+    if(DEBUG) console.log(...strs);
+}
 
 function sizeBuffer(size) {
     let buf = Buffer.alloc(4);
@@ -69,10 +76,10 @@ function getRandomTime(guildId) {
 }
 
 function leave(guildId) {
+    log('disconnect');
     settings[guildId].channel.leave();
     settings[guildId].channel = null;
 }
-
 
 /**
  * Only writes to disk once.
@@ -95,7 +102,7 @@ function createWAV(rawPCM, userId) {
         write.end(Buffer.from(data));
 
         write.on('finish', () => {
-            if(DEBUG) console.log('duration: ', Date.now() - start);
+            if(DURATION) console.log('duration: ', Date.now() - start);
         });
     });
 }
@@ -128,7 +135,7 @@ function createWAV2(rawPCM, userId) {
             read.on('end', () => {
                 write.end();
                 write.on('finish', () => {
-                    if(DEBUG) console.log('duration: ', Date.now() - start);
+                    if(DURATION) console.log('duration: ', Date.now() - start);
                 });
             });
         });
@@ -156,11 +163,11 @@ function join(msg, mem) {
 
         obj.channel = mem.voice.channel;
         obj.channel.join().then(conn => {
-            console.log('connection');
+            log('connection');
 
             // (User, Speaking) => {}
             conn.on('speaking', (u, speaking) => {
-                if(speaking.bitfield != 0) {
+                if(u && !u.bot && speaking.bitfield != 0) {
                     const raw = conn.receiver.createStream(u, { mode: 'pcm' });
 
                     if(TYPE) createWAV2(raw, u.id);
@@ -177,9 +184,22 @@ function join(msg, mem) {
                 if(str.startsWith('[WS] << ')) {
                     let { op, d } = JSON.parse(str.slice(8));
                     if(op == 13) { // op = 13 -> disconnect
-                        delete obj.members[obj.members.indexOf(d.user_id)];
+                        let i = obj.members.indexOf(d.user_id);
+                        if(i != -1) {
+                            obj.members.splice(i, 1);
+                        }
+                        
+                        log(obj.members);
+                        if(obj.members.length == 0) {
+                            leave(mem.guild.id);
+                        }
                     } else if(op == 12) { // op = 12 -> connect
-                        obj.members.push(d.user_id);
+                        client.users.fetch(d.user_id).then(user => {
+                            if(!user.bot)
+                                obj.members.push(d.user_id);
+                            
+                            log(obj.members);
+                        });
                     }
                 }
             });
@@ -200,7 +220,7 @@ client.on('message', msg => {
             "channel": null,                        // voice channel 
             "members": [],                          // string array of user id's currently in the channel
             "min_time": config.default_min_time,    // 
-            "max_time": config.default_max_time,    //
+            "max_time": config.default_max_time     //
         };
     }
 
@@ -238,7 +258,7 @@ client.on('message', msg => {
 });
 
 client.on('ready', () => {
-    console.log('ready');
+    log('ready');
 });
 
 client.login(token);
