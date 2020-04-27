@@ -49,12 +49,12 @@ def rms_dur(data, duration, sample_rate):
 
 
 start_time = now()
-momentary = rms_dur(data, .04, 44000)
+momentary = rms_dur(data, .04, sample_rate)
 print(f"momentary: {now() - start_time} ms")
 
 start_time = now()
 short_term_time = .5
-short_term = rms_dur(data, short_term_time, 44000)
+short_term = rms_dur(data, short_term_time, sample_rate)
 print(f"short term: {now() - start_time} ms")
 
 start_time = now()
