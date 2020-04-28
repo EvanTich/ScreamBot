@@ -94,7 +94,7 @@ function createWAV(rawPCM, userId) {
     });
 
     rawPCM.on('end', () => {
-        let write = fs.createWriteStream(`./recordings/${userId}.wav`);
+        let write = fs.createWriteStream(`./recordings/echo/${userId}.wav`);
         write.write(HEADERS.TOP);
         write.write(sizeBuffer(36 + data.length));
         write.write(HEADERS.MIDDLE);
@@ -102,7 +102,7 @@ function createWAV(rawPCM, userId) {
         write.end(Buffer.from(data));
 
         write.on('finish', () => {
-            if(DURATION) console.log('duration: ', Date.now() - start);
+            if(DURATION) console.log('time taken: ', (Date.now() - start) - (data.length / 192));
         });
     });
 }
@@ -124,7 +124,7 @@ function createWAV2(rawPCM, userId) {
         fs.stat(pcmPath, (err, stats) => {
             let bytes = stats.size;
     
-            let write = fs.createWriteStream(`./recordings/${userId}.wav`);
+            let write = fs.createWriteStream(`./recordings/echo/${userId}.wav`);
             write.write(HEADERS.TOP);
             write.write(sizeBuffer(36 + bytes));
             write.write(HEADERS.MIDDLE);
@@ -135,7 +135,7 @@ function createWAV2(rawPCM, userId) {
             read.on('end', () => {
                 write.end();
                 write.on('finish', () => {
-                    if(DURATION) console.log('duration: ', Date.now() - start);
+                    if(DURATION) console.log('time taken: ', (Date.now() - start) - (data.length / 192));
                 });
             });
         });
@@ -146,7 +146,7 @@ function scream(conn, guildId, id, recursive = false) {
     let { members, channel } = settings[guildId];
     setTimeout(() => {
 
-        conn.play(`./recordings/${members[Math.floor(Math.random() * members.length)]}.wav`);
+        conn.play(`./recordings/echo/${members[Math.floor(Math.random() * members.length)]}.wav`);
 
         if(recursive && channel && channel.id == id)
             scream(conn, guildId, id, recursive);

@@ -139,7 +139,8 @@ function createWAV(rawPCM, userId) {
             write.on('finish', () => {
                 dBMeasurements[userId] = dBMax;
                 log('new clip for ', userId, ' at ', dBMax, ' dB');
-                if(DURATION) console.log('time taken: ', data.length / 4 / 48000 - (Date.now() - start));
+                // data.length / 192 -> ms in voice clip
+                if(DURATION) console.log('time taken: ', (Date.now() - start) - (data.length / 192));
             });
         }
     });
