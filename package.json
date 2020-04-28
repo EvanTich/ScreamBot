@@ -9,11 +9,13 @@
   },
   "author": "Evan Tichenor",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EvanTich/ScreamBot.git",
+  },
   "dependencies": {
     "@discordjs/opus": "^0.1.0",
     "discord.js": "^12.2.0",
-    "ffmpeg-static": "^4.1.1",
-    "fluent-ffmpeg": "^2.1.2",
-    "ytdl-core": "^2.1.0"
+    "ffmpeg-static": "^4.1.1"
   }
 }
